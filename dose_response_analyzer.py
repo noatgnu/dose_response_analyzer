@@ -105,7 +105,6 @@ class DoseResponseAnalyzer:
             confidence_interval (bool): Calculate confidence intervals for parameters (default: False)
             bootstrap_samples (int): Number of bootstrap samples for confidence intervals (default: 1000)
         """
-        # Store algorithm parameters
         self.max_iterations = max_iterations
         self.tolerance = tolerance
         self.selection_metric = selection_metric.lower()
@@ -116,7 +115,6 @@ class DoseResponseAnalyzer:
         self.confidence_interval = confidence_interval
         self.bootstrap_samples = bootstrap_samples
         
-        # Base model specifications
         base_models = {
             'model1': {'func': self._ll2, 'params': ['top', 'ic50'], 'initial_guess': [1.0, 100.0]},
             'model2': {'func': self._ll3, 'params': ['bottom', 'top', 'ic50'], 'initial_guess': [0.0, 1.0, 100.0]},
@@ -126,7 +124,6 @@ class DoseResponseAnalyzer:
             'model6': {'func': self._ll4_fixed_both, 'params': ['top', 'ic50'], 'initial_guess': [1.0, 100.0]}
         }
         
-        # Extended model specifications (if enabled)
         extended_models = {
             'gompertz': {'func': self._gompertz, 'params': ['top', 'bottom', 'ec50', 'slope'], 'initial_guess': [1.0, 0.0, 100.0, 1.0]},
             'weibull': {'func': self._weibull, 'params': ['top', 'bottom', 'ec50', 'slope'], 'initial_guess': [1.0, 0.0, 100.0, 1.0]},
@@ -134,20 +131,17 @@ class DoseResponseAnalyzer:
             'linear': {'func': self._linear, 'params': ['slope', 'intercept'], 'initial_guess': [-0.001, 1.0]}
         }
         
-        # Combine models based on user preference
         if enable_custom_models:
             self.model_specs = {**base_models, **extended_models}
         else:
             self.model_specs = base_models
         
-        # Set default column mapping
         self.default_columns = {
             'compound': 'Compound',
             'concentration': 'Conc', 
             'response': 'Rab10'
         }
         
-        # Use provided column mapping or defaults
         self.columns = column_mapping if column_mapping is not None else self.default_columns.copy()
     
     def _ll2(self, x, top, ic50):
@@ -355,10 +349,8 @@ class DoseResponseAnalyzer:
             Dictionary with model results or None if fitting failed
         """
         try:
-            # Get initial guess based on strategy
             initial_guess = self._get_initial_guess(concentration, response, model_spec)
             
-            # Apply outlier detection if enabled
             if self.outlier_detection:
                 concentration, response = self._remove_outliers(concentration, response)
             
@@ -374,13 +366,11 @@ class DoseResponseAnalyzer:
             
             y_predicted = model_spec['func'](concentration, *fitted_params)
             
-            # Calculate multiple metrics
             rmse = np.sqrt(mean_squared_error(response, y_predicted))
             aic = self._calculate_aic(response, y_predicted, len(fitted_params))
             bic = self._calculate_bic(response, y_predicted, len(fitted_params))
             r2 = self._calculate_r2(response, y_predicted)
             
-            # Calculate confidence intervals if requested
             confidence_intervals = None
             if self.confidence_interval:
                 confidence_intervals = self._calculate_confidence_intervals(
@@ -420,14 +410,11 @@ class DoseResponseAnalyzer:
         """Generate data-driven initial guesses."""
         guesses = model_spec['initial_guess'].copy()
         
-        # Estimate top and bottom from data
         top_estimate = np.max(response)
         bottom_estimate = np.min(response)
         
-        # Estimate IC50 as geometric mean of concentration range
         ic50_estimate = np.sqrt(np.min(concentration) * np.max(concentration))
         
-        # Update guesses based on parameter names
         param_names = model_spec['params']
         for i, param in enumerate(param_names):
             if param == 'top':
@@ -444,7 +431,6 @@ class DoseResponseAnalyzer:
         data_driven = self._data_driven_guess(concentration, response, model_spec)
         fixed = model_spec['initial_guess']
         
-        # Use data-driven for some parameters, fixed for others
         adaptive = []
         param_names = model_spec['params']
         for i, param in enumerate(param_names):
@@ -481,12 +467,10 @@ class DoseResponseAnalyzer:
         if not self.confidence_interval:
             return None
         
-        # Bootstrap sampling
         n_points = len(concentration)
         bootstrap_params = []
         
         for _ in range(self.bootstrap_samples):
-            # Sample with replacement
             indices = np.random.choice(n_points, n_points, replace=True)
             boot_conc = concentration[indices]
             boot_resp = response[indices]
@@ -552,16 +536,12 @@ class DoseResponseAnalyzer:
         ValueError
             If required columns are missing from DataFrame.
         """
-
-        # Validate required columns exist
         self._validate_columns(df)
         
-        # Get actual column names
         compound_col = self.columns['compound']
         concentration_col = self.columns['concentration']
         response_col = self.columns['response']
         
-        # Filter data (remove zero concentrations) and add log column
         data_filtered = df[df[concentration_col] > 0].copy()
         data_filtered['Log'] = np.log10(data_filtered[concentration_col])
 
@@ -731,29 +711,25 @@ class DoseResponsePlotter:
             top = fitted_params[0]
             ic50 = fitted_params[1]
         elif model_name == 'gompertz':
-            # Gompertz: ['top', 'bottom', 'ec50', 'slope']
             top = fitted_params[0]
             bottom = fitted_params[1] 
-            ic50 = fitted_params[2]  # ec50 is equivalent to ic50
+            ic50 = fitted_params[2]
             hillslope = fitted_params[3]
         elif model_name == 'weibull':
-            # Weibull: ['top', 'bottom', 'ec50', 'slope']
             top = fitted_params[0]
             bottom = fitted_params[1]
-            ic50 = fitted_params[2]  # ec50 is equivalent to ic50
+            ic50 = fitted_params[2]
             hillslope = fitted_params[3]
         elif model_name == 'exponential':
-            # Exponential: ['top', 'rate'] - no IC50 concept
             top = fitted_params[0]
-            bottom = 0  # Exponential decay approaches 0
-            ic50 = np.nan  # No IC50 for exponential
-            hillslope = fitted_params[1]  # Rate as slope
+            bottom = 0
+            ic50 = np.nan
+            hillslope = fitted_params[1]
         elif model_name == 'linear':
-            # Linear: ['slope', 'intercept'] - no dose-response parameters
-            top = np.nan  # No top for linear
-            bottom = np.nan  # No bottom for linear
-            ic50 = np.nan  # No IC50 for linear
-            hillslope = fitted_params[0]  # Slope
+            top = np.nan
+            bottom = np.nan
+            ic50 = np.nan
+            hillslope = fitted_params[0]
         else:
             top = bottom = ic50 = hillslope = np.nan
 
@@ -830,12 +806,10 @@ class DoseResponsePlotter:
             import matplotlib.pyplot as plt
             from matplotlib.ticker import LogFormatter, LogLocator
 
-            # Get column names from analyzer
             concentration_col = analyzer.columns['concentration']
             response_col = analyzer.columns['response'] 
             compound_col = analyzer.columns['compound']
 
-            # Filter data (remove zero concentrations)
             data_filtered = df[df[concentration_col] > 0].copy()
 
             compounds = list(results['best_fitted_models'].keys())
@@ -845,7 +819,6 @@ class DoseResponsePlotter:
                 print("No compounds found in results!")
                 return
 
-            # Calculate subplot layout
             if n_compounds == 1:
                 ncols = 1
                 nrows = 1
@@ -856,96 +829,77 @@ class DoseResponsePlotter:
                 ncols = 3
                 nrows = int(np.ceil(n_compounds / ncols))
 
-            # Create figure
             fig, axes = plt.subplots(nrows, ncols,
                                    figsize=(figsize_per_plot[0] * ncols, figsize_per_plot[1] * nrows))
 
-            # Handle single subplot case
             if n_compounds == 1:
                 axes = [axes]
             elif nrows == 1:
                 axes = axes if hasattr(axes, '__iter__') else [axes]
             else:
                 axes = axes.flatten()
-
-            # Plot each compound
             for i, (compound, model_data) in enumerate(results['best_fitted_models'].items()):
                 if i >= len(axes):
                     break
 
                 ax = axes[i]
 
-                # Get compound-specific data
                 compound_data = data_filtered[data_filtered[compound_col] == compound].copy()
                 model_result = model_data['model_result']
 
-                # Set up concentration range for plot
                 x_min = compound_data[concentration_col].min()
                 x_max = compound_data[concentration_col].max()
                 xlim_extended = [x_min / 10, x_max * 10]
                 log_min = int(np.floor(np.log10(xlim_extended[0])))
                 log_max = int(np.ceil(np.log10(xlim_extended[1])))
 
-                # Generate smooth curve for fitted model
                 conc_smooth, response_smooth = analyzer.predict_curve(
                     model_data,
                     concentration_range=(x_min, x_max),
                     n_points=200
                 )
 
-                # Plot data points
                 point_style = self.point_styles[i % len(self.point_styles)]
                 ax.scatter(compound_data[concentration_col], compound_data[response_col],
                           color=self.colors['points'], s=50, alpha=0.7,
                           marker=point_style, label='Data points', zorder=3)
 
-                # Plot fitted curve
                 ax.plot(conc_smooth, response_smooth,
                        color=self.colors['curve'], linewidth=self.line_widths['curve'],
                        label=f"{model_result['model_name']} fit", zorder=2)
 
-                # Extract model parameters for lines
                 params = self._extract_model_parameters(model_result)
                 ic50 = params['ic50']
                 top = params['top']
                 bottom = params['bottom']
 
-                # Calculate IC50 response level
                 ic50_response = (top + bottom) / 2
 
-                # Add IC50 lines if requested
                 if show_ic50_lines and not np.isnan(ic50):
-                    # Vertical line at IC50
                     ax.axvline(x=ic50, color=self.colors['ic50_v'],
                               linestyle='--', linewidth=self.line_widths['lines'],
                               alpha=0.8, zorder=1)
 
-                    # Horizontal line at IC50 response
                     ax.axhline(y=ic50_response, color=self.colors['ic50_h'],
                               linestyle='--', linewidth=self.line_widths['lines'],
                               alpha=0.8, zorder=1)
 
-                    # IC50 label
                     ax.text(ic50 * 1.1, ax.get_ylim()[1] * 0.95,
                            f'IC₅₀ = {ic50:.1f} nM',
                            color=self.colors['curve'], fontsize=10, fontweight='bold',
                            bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
 
-                    # 50% inhibition label
                     ax.text(xlim_extended[0], ic50_response - 0.05,
                            '50% of maximum inhibition',
                            color=self.colors['ic50_h'], fontsize=9, alpha=0.8)
 
-                # Add Dmax lines if requested
                 if show_dmax_lines:
                     dmax_info = self._calculate_dmax_info(compound_data, model_result, analyzer)
 
-                    # Observed Dmax line
                     ax.axhline(y=dmax_info['dmax_obs'], color=self.colors['dmax_obs'],
                               linestyle='--', linewidth=self.line_widths['lines'],
                               alpha=0.8, label=f"Observed Dmax ({dmax_info['perc_deg_obs']:.0f}%)")
 
-                    # Predicted Dmax line (only if significantly different)
                     bottom_threshold = 0.02
                     if (abs(dmax_info['dmax_obs'] - dmax_info['bottom']) > bottom_threshold and
                         dmax_info['bottom'] <= dmax_info['dmax_obs']):
@@ -953,51 +907,42 @@ class DoseResponsePlotter:
                                   linestyle='--', linewidth=self.line_widths['lines'],
                                   alpha=0.8, label=f"Predicted Dmax (100%)")
 
-                # Format axes
                 ax.set_xscale('log')
                 ax.set_xlim(xlim_extended)
                 ax.set_ylim(0, 1.2)
 
-                # Set log ticks
                 log_range = range(log_min, log_max + 1)
                 x_ticks = [10 ** i for i in log_range if 10 ** i >= xlim_extended[0] and 10 ** i <= xlim_extended[1]]
                 ax.set_xticks(x_ticks)
                 ax.set_xticklabels([f'{tick:g}' for tick in x_ticks])
 
-                # Labels and title (using dynamic column names)
                 ax.set_xlabel(f'{analyzer.columns["concentration"]}', fontsize=12)
                 ax.set_ylabel(f'{analyzer.columns["response"]}', fontsize=12)
                 ax.set_title(f'{compound}', fontsize=14, fontweight='bold')
 
-                # Grid
                 ax.grid(True, alpha=0.3, which='both')
 
-                # Model info text
                 rmse = model_result['rmse']
                 ax.text(0.02, 0.98, f'RMSE: {rmse:.4f}',
                        transform=ax.transAxes, fontsize=9,
                        verticalalignment='top',
                        bbox=dict(boxstyle="round,pad=0.3", facecolor='lightyellow', alpha=0.8))
 
-            # Remove extra subplots
             for j in range(n_compounds, len(axes)):
                 axes[j].remove()
 
-            # Add overall legend for Dmax lines
             if show_dmax_lines:
                 legend_elements = []
                 for compound, model_data in results['best_fitted_models'].items():
                     compound_data = data_filtered[data_filtered[compound_col] == compound]
                     dmax_info = self._calculate_dmax_info(compound_data, model_data['model_result'], analyzer)
 
-                    # Observed Dmax legend entry
                     legend_elements.append(
                         plt.Line2D([0], [0], color=self.colors['dmax_obs'], linestyle='--',
                                   label=f"{compound}: Observed Dmax = {dmax_info['dmax_obs']:.2f} "
                                         f"({dmax_info['perc_deg_obs']:.0f}% at {dmax_info['max_conc']:.0f} nM)")
                     )
 
-                    # Predicted Dmax legend entry (if applicable)
                     if (abs(dmax_info['dmax_obs'] - dmax_info['bottom']) > 0.02 and
                         dmax_info['bottom'] <= dmax_info['dmax_obs'] and
                         not np.isnan(dmax_info['pred_conc_100'])):
@@ -1014,11 +959,9 @@ class DoseResponsePlotter:
             plt.tight_layout()
 
             if save_plots:
-                # Create output directory
                 output_path = Path(output_dir)
                 output_path.mkdir(parents=True, exist_ok=True)
                 
-                # Generate dynamic filename
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") if add_timestamp else ""
                 timestamp_suffix = f"_{timestamp}" if timestamp else ""
                 
@@ -1028,7 +971,6 @@ class DoseResponsePlotter:
                 plt.savefig(comprehensive_path, dpi=300, bbox_inches='tight')
                 print(f"Comprehensive plot saved as: {comprehensive_path}")
 
-            # Create individual plots for each compound
             if save_plots:
                 self._create_individual_plots(results, analyzer, data_filtered, 
                                             show_ic50_lines, show_dmax_lines,
@@ -1058,7 +1000,6 @@ class DoseResponsePlotter:
         """
         import matplotlib.pyplot as plt
         
-        # Get column names from analyzer
         concentration_col = analyzer.columns['concentration']
         response_col = analyzer.columns['response']
         compound_col = analyzer.columns['compound']
@@ -1066,7 +1007,6 @@ class DoseResponsePlotter:
         for compound, model_data in results['best_fitted_models'].items():
             fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
-            # Get compound-specific data
             compound_data = data_filtered[data_filtered[compound_col] == compound].copy()
             model_result = model_data['model_result']
 
@@ -1127,11 +1067,9 @@ class DoseResponsePlotter:
 
             plt.tight_layout()
             
-            # Create output directory
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
             
-            # Generate dynamic filename for each compound
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") if add_timestamp else ""
             timestamp_suffix = f"_{timestamp}" if timestamp else ""
             
@@ -1169,7 +1107,6 @@ def example_usage():
         >>> data_custom = data.rename(columns={'Compound': 'Drug', 'Conc': 'Dose', 'Rab10': 'Effect'})
         >>> results_custom = analyzer_custom.fit_best_models(data_custom)
     """
-
     np.random.seed(42)
     compounds = ['Compound_A', 'Compound_B']
     concentrations = [0.1, 1, 10, 100, 1000, 10000]
@@ -1216,7 +1153,6 @@ if __name__ == "__main__":
     try:
         plotter = DoseResponsePlotter()
         
-        # Example of customized output configuration
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         custom_output_dir = f"results_{timestamp}"
         
@@ -1225,10 +1161,9 @@ if __name__ == "__main__":
             output_dir=custom_output_dir,
             filename_prefix="example_analysis",
             add_timestamp=True,
-            file_format="png"  # Can be svg, png, pdf, etc.
+            file_format="png"
         )
         
-        # Example with custom column mapping
         print("\n=== CUSTOM COLUMN MAPPING EXAMPLE ===")
         custom_columns = {
             'compound': 'Drug_ID',
@@ -1236,14 +1171,12 @@ if __name__ == "__main__":
             'response': 'Normalized_Response'
         }
         
-        # Create data with custom column names
         data_custom = data.rename(columns={
             'Compound': 'Drug_ID',
             'Conc': 'Dose_nM', 
             'Rab10': 'Normalized_Response'
         })
         
-        # Analyze with custom column mapping
         analyzer_custom = DoseResponseAnalyzer(column_mapping=custom_columns)
         results_custom = analyzer_custom.fit_best_models(data_custom)
         
