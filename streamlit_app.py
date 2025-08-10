@@ -32,8 +32,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                             ic50_vertical_color="#1f77b4", ic50_horizontal_color="#000000",
                             dmax_observed_color="#d62728", dmax_predicted_color="#2ca02c"):
         """Create comprehensive dose-response plots optimized for Streamlit display."""
-        
-        """Extract column mappings and prepare filtered data for plotting."""
+
         concentration_col = analyzer.columns['concentration']
         response_col = analyzer.columns['response'] 
         compound_col = analyzer.columns['compound']
@@ -44,8 +43,7 @@ class StreamlitPlotter(DoseResponsePlotter):
         if len(compounds) == 0:
             st.warning("No compounds found in results!")
             return
-            
-        """Generate individual dose-response plots for each compound."""
+
         for i, (compound, model_data) in enumerate(results['best_fitted_models'].items()):
             st.write(f"### {compound}")
             
@@ -58,22 +56,19 @@ class StreamlitPlotter(DoseResponsePlotter):
                 plt.style.use('default')
             
             fig, ax = plt.subplots(figsize=figsize_per_plot)
-            
-            """Calculate plot range and logarithmic axis limits."""
+
             x_min = compound_data[concentration_col].min()
             x_max = compound_data[concentration_col].max()
             xlim_extended = [x_min / 10, x_max * 10]
             log_range = range(int(np.floor(np.log10(xlim_extended[0]))),
                               int(np.ceil(np.log10(xlim_extended[1]))) + 1)
-            
-            """Generate smooth curve for fitted dose-response model."""
+
             conc_smooth, response_smooth = analyzer.predict_curve(
                 model_data,
                 concentration_range=(x_min, x_max),
                 n_points=200
             )
-            
-            """Plot experimental data points and fitted curve."""
+
             ax.scatter(compound_data[concentration_col], compound_data[response_col],
                       color=point_color, s=point_size, alpha=point_alpha,
                       marker=point_marker, label='Data points', zorder=3)
@@ -92,8 +87,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                 ic50_response = (top + bottom) / 2
             else:
                 ic50_response = np.nan
-            
-            """Add IC50 reference lines and labels if requested."""
+
             if show_ic50_lines and not np.isnan(ic50) and not np.isnan(ic50_response):
                 ax.axvline(x=ic50, color=ic50_vertical_color,
                           linestyle='--', linewidth=self.line_widths['lines'],
@@ -111,8 +105,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                 ax.text(xlim_extended[0], ic50_response - 0.05,
                        '50% of maximum inhibition',
                        color=ic50_horizontal_color, fontsize=text_size-3, alpha=0.8)
-            
-            """Add Dmax reference lines if requested."""
+
             if show_dmax_lines:
                 dmax_info = self._calculate_dmax_info(compound_data, model_result, analyzer)
                 
@@ -126,8 +119,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                     ax.axhline(y=dmax_info['bottom'], color=dmax_predicted_color,
                               linestyle='--', linewidth=self.line_widths['lines'],
                               alpha=0.8, label=f"Predicted Dmax (100%)")
-            
-            """Configure axis formatting, scales, and tick marks."""
+
             ax.set_xscale('log')
             ax.set_xlim(xlim_extended)
             ax.set_ylim(0, 1.2)
@@ -135,8 +127,7 @@ class StreamlitPlotter(DoseResponsePlotter):
             x_ticks = [10**i for i in log_range]
             ax.set_xticks(x_ticks)
             ax.set_xticklabels([f'{tick:g}' for tick in x_ticks])
-            
-            """Add plot labels, title, grid, legend, and model information."""
+
             ax.set_xlabel(f'{concentration_col}', fontsize=text_size+2)
             ax.set_ylabel(f'{response_col}', fontsize=text_size+2)
             ax.set_title(f'{compound}', fontsize=title_size, fontweight='bold')
@@ -158,8 +149,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                    transform=ax.transAxes, fontsize=text_size-2,
                    verticalalignment='top',
                    bbox=dict(boxstyle="round,pad=0.3", facecolor='lightyellow', alpha=0.8))
-            
-            """Finalize plot and display in Streamlit with metrics."""
+
             plt.tight_layout()
             
             col_download1, col_download2, col_download3 = st.columns(3)
@@ -390,8 +380,6 @@ def main():
             data_source_options,
             help=help_text
         )
-        
-        """Handle file upload with automatic separator detection."""
         if data_source == "📁 Upload file":
             uploaded_file = st.file_uploader(
                 "Choose a file", 
@@ -582,8 +570,7 @@ def main():
             if compound_col == concentration_col or compound_col == response_col or concentration_col == response_col:
                 st.error("❌ Please select different columns for compound, concentration, and response.")
                 st.stop()
-                
-            """Execute dose-response analysis with progress feedback."""
+
             try:
                 data_for_analysis = data.copy()
                 
@@ -653,8 +640,7 @@ def main():
                 st.error(f"❌ Error during analysis: {str(e)}")
                 st.write("Please check your data format and column selections.")
                 st.stop()
-    
-    """Display comprehensive results in organized tabs."""
+
     if 'results' in st.session_state:
         st.header("📈 Results")
         
