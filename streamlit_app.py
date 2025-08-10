@@ -359,7 +359,7 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    st.title("📊 Dose-Response Curve Analysis")
+    st.title("📊 Dose-Response Curve")
     st.markdown("""
     The code for this application has been adapted from the shiny R application by David Walker whose source code can be found here https://github.com/noatgnu/dose_response_analyzer/blob/master/Shiny%20Rab10%20working.R
     """)
