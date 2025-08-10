@@ -403,7 +403,7 @@ def main():
     This application uses curve fitting algorithms equivalent to R's drc package 
     to fit multiple dose-response models and automatically select the best fit.
     
-    The code for this application has been adapted from the shiny R application whose source code can be found here https://github.com/noatgnu/dose_response_analyzer/blob/master/Shiny%20Rab10%20working.R
+    The code for this application has been adapted from the shiny R application by David Walker whose source code can be found here https://github.com/noatgnu/dose_response_analyzer/blob/master/Shiny%20Rab10%20working.R
     """)
     
     """Create sidebar interface for data upload and configuration."""
