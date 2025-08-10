@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "dose-response-analyzer"
+version = "0.1.0"
+description = ""
+authors = ["Toan Phung <toan.phung@proteo.info>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+scipy = "^1.16.1"
+numpy = "^2.3.2"
+pandas = "^2.3.1"
+scikit-learn = "^1.7.1"
+matplotlib = "^3.10.5"
+streamlit = "^1.48.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
