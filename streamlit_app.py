@@ -400,8 +400,10 @@ def main():
     st.markdown("""
     **Upload your data and analyze dose-response relationships with publication-quality plots**
     
-    This application uses advanced curve fitting algorithms equivalent to R's drc package 
+    This application uses curve fitting algorithms equivalent to R's drc package 
     to fit multiple dose-response models and automatically select the best fit.
+    
+    The code for this application has been adapted from the shiny R application whose source code can be found here https://github.com/noatgnu/dose_response_analyzer/blob/master/Shiny%20Rab10%20working.R
     """)
     
     """Create sidebar interface for data upload and configuration."""
