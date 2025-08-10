@@ -537,12 +537,10 @@ def main():
         outlier_detection = False
         confidence_interval = False
         bootstrap_samples = 1000
-    
-    """Create main content area with data preview and analysis controls."""
+
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        """Display data preview and summary statistics."""
         st.subheader("📋 Data Preview")
         safe_st_dataframe(data.head(10), use_container_width=True)
         
