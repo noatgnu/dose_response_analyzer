@@ -799,9 +799,10 @@ def main():
                     initial_guess_strategy=initial_guess_strategy,
                     outlier_detection=outlier_detection,
                     confidence_interval=confidence_interval,
-                    bootstrap_samples=bootstrap_samples,
-                    log_transformed=log_transformed
+                    bootstrap_samples=bootstrap_samples
                 )
+                
+                analyzer.log_transformed = log_transformed
                 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
