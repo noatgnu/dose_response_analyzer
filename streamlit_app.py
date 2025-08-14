@@ -30,7 +30,8 @@ class StreamlitPlotter(DoseResponsePlotter):
                             line_alpha=1.0, line_style='-', show_grid=True, grid_alpha=0.3, 
                             grid_style='-', legend_position='upper center', plot_style='default',
                             ic50_vertical_color="#1f77b4", ic50_horizontal_color="#000000",
-                            dmax_observed_color="#d62728", dmax_predicted_color="#2ca02c"):
+                            dmax_observed_color="#d62728", dmax_predicted_color="#2ca02c",
+                            combined_plot=False, compound_colors=None):
         """Create comprehensive dose-response plots optimized for Streamlit display."""
 
         concentration_col = analyzer.columns['concentration']
@@ -44,6 +45,164 @@ class StreamlitPlotter(DoseResponsePlotter):
             st.warning("No compounds found in results!")
             return
 
+        if combined_plot:
+            self._create_combined_plot(results, analyzer, data_filtered, show_ic50_lines, show_dmax_lines,
+                                     figsize_per_plot, text_size, title_size, point_color, line_color,
+                                     line_thickness, point_size, point_alpha, point_marker, line_alpha,
+                                     line_style, show_grid, grid_alpha, grid_style, legend_position,
+                                     plot_style, ic50_vertical_color, ic50_horizontal_color,
+                                     dmax_observed_color, dmax_predicted_color, compound_colors)
+        else:
+            self._create_separate_plots(results, analyzer, data_filtered, show_ic50_lines, show_dmax_lines,
+                                      figsize_per_plot, text_size, title_size, point_color, line_color,
+                                      line_thickness, point_size, point_alpha, point_marker, line_alpha,
+                                      line_style, show_grid, grid_alpha, grid_style, legend_position,
+                                      plot_style, ic50_vertical_color, ic50_horizontal_color,
+                                      dmax_observed_color, dmax_predicted_color, compound_colors)
+    
+    def _create_combined_plot(self, results, analyzer, data_filtered, show_ic50_lines, show_dmax_lines,
+                            figsize_per_plot, text_size, title_size, point_color, line_color,
+                            line_thickness, point_size, point_alpha, point_marker, line_alpha,
+                            line_style, show_grid, grid_alpha, grid_style, legend_position,
+                            plot_style, ic50_vertical_color, ic50_horizontal_color,
+                            dmax_observed_color, dmax_predicted_color, compound_colors):
+        """Create a single plot with all compounds combined."""
+        
+        concentration_col = analyzer.columns['concentration']
+        response_col = analyzer.columns['response']
+        compound_col = analyzer.columns['compound']
+        
+        if plot_style != 'default':
+            plt.style.use(plot_style)
+        else:
+            plt.style.use('default')
+        
+        fig, ax = plt.subplots(figsize=figsize_per_plot)
+        
+        default_colors = plt.cm.tab10(np.linspace(0, 1, len(results['best_fitted_models'])))
+        markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
+        
+        x_min_global = float('inf')
+        x_max_global = 0
+        
+        for i, (compound, model_data) in enumerate(results['best_fitted_models'].items()):
+            compound_data = data_filtered[data_filtered[compound_col] == compound].copy()
+            model_result = model_data['model_result']
+            
+            if compound_colors and compound in compound_colors:
+                point_color_compound = compound_colors[compound].get('point_color', default_colors[i % len(default_colors)])
+                line_color_compound = compound_colors[compound].get('line_color', default_colors[i % len(default_colors)])
+            else:
+                point_color_compound = default_colors[i % len(default_colors)]
+                line_color_compound = default_colors[i % len(default_colors)]
+                
+            marker_style = markers[i % len(markers)]
+            
+            x_min = compound_data[concentration_col].min()
+            x_max = compound_data[concentration_col].max()
+            x_min_global = min(x_min_global, x_min)
+            x_max_global = max(x_max_global, x_max)
+            
+            conc_smooth, response_smooth = analyzer.predict_curve(
+                model_data,
+                concentration_range=(x_min, x_max),
+                n_points=200
+            )
+            
+            ax.scatter(compound_data[concentration_col], compound_data[response_col],
+                      color=point_color_compound, s=point_size, alpha=point_alpha,
+                      marker=marker_style, label=f'{compound} (data)', zorder=3)
+            
+            ax.plot(conc_smooth, response_smooth,
+                   color=line_color_compound, linewidth=line_thickness, alpha=line_alpha,
+                   linestyle=line_style, label=f'{compound} ({model_result["model_name"]})', zorder=2)
+            
+            params = self._extract_model_parameters(model_result)
+            ic50 = params['ic50']
+            
+            if show_ic50_lines and not np.isnan(ic50):
+                ic50_response = (params['top'] + params['bottom']) / 2 if not (np.isnan(params['top']) or np.isnan(params['bottom'])) else np.nan
+                
+                if not np.isnan(ic50_response):
+                    ax.axvline(x=ic50, color=line_color_compound, linestyle='--', 
+                              linewidth=1.2, alpha=0.6, zorder=1)
+                    ax.axhline(y=ic50_response, color=line_color_compound, linestyle=':', 
+                              linewidth=1.2, alpha=0.6, zorder=1)
+        
+        xlim_extended = [x_min_global / 10, x_max_global * 10]
+        log_min = int(np.floor(np.log10(xlim_extended[0])))
+        log_max = int(np.ceil(np.log10(xlim_extended[1])))
+        
+        ax.set_xscale('log')
+        ax.set_xlim(xlim_extended)
+        ax.set_ylim(0, 1.2)
+        
+        x_ticks = [10**i for i in range(log_min, log_max + 1)]
+        ax.set_xticks(x_ticks)
+        ax.set_xticklabels([f'{tick:g}' for tick in x_ticks])
+        
+        ax.set_xlabel(concentration_col, fontsize=text_size)
+        ax.set_ylabel(response_col, fontsize=text_size)
+        ax.set_title('Combined Dose-Response Curves', fontsize=title_size, fontweight='bold')
+        
+        if show_grid:
+            ax.grid(True, alpha=grid_alpha, which='both', linestyle=grid_style)
+        
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=text_size-2)
+        
+        plt.tight_layout()
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        col_download1, col_download2, col_download3 = st.columns(3)
+        
+        with col_download1:
+            png_buffer = io.BytesIO()
+            fig.savefig(png_buffer, format='png', dpi=300, bbox_inches='tight')
+            png_buffer.seek(0)
+            st.download_button(
+                label="📥 PNG",
+                data=png_buffer.getvalue(),
+                file_name=f"combined_plot_{timestamp}.png",
+                mime="image/png"
+            )
+        
+        with col_download2:
+            svg_buffer = io.BytesIO()
+            fig.savefig(svg_buffer, format='svg', bbox_inches='tight')
+            svg_buffer.seek(0)
+            st.download_button(
+                label="📥 SVG",
+                data=svg_buffer.getvalue(),
+                file_name=f"combined_plot_{timestamp}.svg",
+                mime="image/svg+xml"
+            )
+        
+        with col_download3:
+            pdf_buffer = io.BytesIO()
+            fig.savefig(pdf_buffer, format='pdf', bbox_inches='tight')
+            pdf_buffer.seek(0)
+            st.download_button(
+                label="📥 PDF",
+                data=pdf_buffer.getvalue(),
+                file_name=f"combined_plot_{timestamp}.pdf",
+                mime="application/pdf"
+            )
+        
+        st.pyplot(fig, dpi=300)
+        plt.close()
+
+    def _create_separate_plots(self, results, analyzer, data_filtered, show_ic50_lines, show_dmax_lines,
+                             figsize_per_plot, text_size, title_size, point_color, line_color,
+                             line_thickness, point_size, point_alpha, point_marker, line_alpha,
+                             line_style, show_grid, grid_alpha, grid_style, legend_position,
+                             plot_style, ic50_vertical_color, ic50_horizontal_color,
+                             dmax_observed_color, dmax_predicted_color, compound_colors):
+        """Create separate plots for each compound."""
+        
+        concentration_col = analyzer.columns['concentration']
+        response_col = analyzer.columns['response']
+        compound_col = analyzer.columns['compound']
+        
         for i, (compound, model_data) in enumerate(results['best_fitted_models'].items()):
             st.write(f"### {compound}")
             
@@ -69,15 +228,21 @@ class StreamlitPlotter(DoseResponsePlotter):
                 n_points=200
             )
 
+            if compound_colors and compound in compound_colors:
+                current_point_color = compound_colors[compound].get('point_color', point_color)
+                current_line_color = compound_colors[compound].get('line_color', line_color)
+            else:
+                current_point_color = point_color
+                current_line_color = line_color
+                
             ax.scatter(compound_data[concentration_col], compound_data[response_col],
-                      color=point_color, s=point_size, alpha=point_alpha,
+                      color=current_point_color, s=point_size, alpha=point_alpha,
                       marker=point_marker, label='Data points', zorder=3)
             
             ax.plot(conc_smooth, response_smooth,
-                   color=line_color, linewidth=line_thickness, alpha=line_alpha,
+                   color=current_line_color, linewidth=line_thickness, alpha=line_alpha,
                    linestyle=line_style, label=f"{model_result['model_name']} fit", zorder=2)
             
-            """Extract model parameters and calculate IC50 response level."""
             params = self._extract_model_parameters(model_result)
             ic50 = params['ic50']
             top = params['top']
@@ -99,7 +264,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                 
                 ax.text(ic50 * 1.1, ax.get_ylim()[1] * 0.95,
                        f'IC₅₀ = {ic50:.1f}',
-                       color=line_color, fontsize=text_size, fontweight='bold',
+                       color=current_line_color, fontsize=text_size, fontweight='bold',
                        bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.9))
                 
                 ax.text(xlim_extended[0], ic50_response - 0.05,
@@ -473,10 +638,13 @@ def main():
             help="Column containing response or effect measurements (auto-detected: Rab10)"
         )
         
-        """Configure plot display options and sizing."""
         st.subheader("Plot Options")
         show_ic50 = st.checkbox("Show IC50 lines", value=True)
         show_dmax = st.checkbox("Show Dmax lines", value=True)
+        combined_plot = st.checkbox("Combine all compounds on single plot", value=False, 
+                                   help="Show all compounds on one plot instead of separate plots")
+        log_transformed = st.checkbox("Concentration data is already log-transformed", value=False,
+                                    help="Check if your concentration values are already log10 transformed")
         
         st.subheader("Plot Customization")
         
@@ -527,6 +695,40 @@ def main():
         ic50_horizontal_color = st.color_picker("IC50 horizontal line", "#000000")
         dmax_observed_color = st.color_picker("Observed Dmax line", "#d62728")
         dmax_predicted_color = st.color_picker("Predicted Dmax line", "#2ca02c")
+        
+        compound_colors = None
+        if len(data[compound_col].unique()) > 1:
+            st.write("**Individual Compound Colors**")
+            custom_compound_colors = st.checkbox("Customize colors for each compound", 
+                                               help="Override default colors with custom colors for each compound")
+            
+            if custom_compound_colors:
+                compound_colors = {}
+                default_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", 
+                                "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+                
+                for i, compound in enumerate(data[compound_col].unique()):
+                    st.write(f"**{compound}**")
+                    col_point, col_line = st.columns(2)
+                    
+                    with col_point:
+                        point_color = st.color_picker(
+                            f"Data points", 
+                            default_colors[i % len(default_colors)],
+                            key=f"point_{compound}"
+                        )
+                    
+                    with col_line:
+                        line_color = st.color_picker(
+                            f"Fitted line", 
+                            default_colors[i % len(default_colors)],
+                            key=f"line_{compound}"
+                        )
+                    
+                    compound_colors[compound] = {
+                        'point_color': point_color,
+                        'line_color': line_color
+                    }
         
         max_iterations = 10000
         tolerance = 1e-8
@@ -597,7 +799,8 @@ def main():
                     initial_guess_strategy=initial_guess_strategy,
                     outlier_detection=outlier_detection,
                     confidence_interval=confidence_interval,
-                    bootstrap_samples=bootstrap_samples
+                    bootstrap_samples=bootstrap_samples,
+                    log_transformed=log_transformed
                 )
                 
                 progress_bar = st.progress(0)
@@ -671,7 +874,9 @@ def main():
                 ic50_vertical_color=ic50_vertical_color,
                 ic50_horizontal_color=ic50_horizontal_color,
                 dmax_observed_color=dmax_observed_color,
-                dmax_predicted_color=dmax_predicted_color
+                dmax_predicted_color=dmax_predicted_color,
+                combined_plot=combined_plot,
+                compound_colors=compound_colors
             )
         
         with tab2:

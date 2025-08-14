@@ -88,7 +88,7 @@ class DoseResponseAnalyzer:
     def __init__(self, column_mapping=None, max_iterations=10000, tolerance=1e-8, 
                  selection_metric='rmse', enable_custom_models=True, fitting_method='lm',
                  initial_guess_strategy='adaptive', outlier_detection=False, 
-                 confidence_interval=False, bootstrap_samples=1000):
+                 confidence_interval=False, bootstrap_samples=1000, log_transformed=False):
         """Initialize the analyzer with predefined model specifications and algorithm customization.
         
         Args:
@@ -104,6 +104,7 @@ class DoseResponseAnalyzer:
             outlier_detection (bool): Enable outlier detection and robust fitting (default: False)
             confidence_interval (bool): Calculate confidence intervals for parameters (default: False)
             bootstrap_samples (int): Number of bootstrap samples for confidence intervals (default: 1000)
+            log_transformed (bool): Whether concentration values are already log-transformed (default: False)
         """
         self.max_iterations = max_iterations
         self.tolerance = tolerance
@@ -114,6 +115,7 @@ class DoseResponseAnalyzer:
         self.outlier_detection = outlier_detection
         self.confidence_interval = confidence_interval
         self.bootstrap_samples = bootstrap_samples
+        self.log_transformed = log_transformed
         
         base_models = {
             'model1': {'func': self._ll2, 'params': ['top', 'ic50'], 'initial_guess': [1.0, 100.0]},
@@ -542,8 +544,13 @@ class DoseResponseAnalyzer:
         concentration_col = self.columns['concentration']
         response_col = self.columns['response']
         
-        data_filtered = df[df[concentration_col] > 0].copy()
-        data_filtered['Log'] = np.log10(data_filtered[concentration_col])
+        if self.log_transformed:
+            data_filtered = df.copy()
+            data_filtered['Log'] = data_filtered[concentration_col]
+            data_filtered[concentration_col] = 10 ** data_filtered[concentration_col]
+        else:
+            data_filtered = df[df[concentration_col] > 0].copy()
+            data_filtered['Log'] = np.log10(data_filtered[concentration_col])
 
         results = {}
         summary_data = []
