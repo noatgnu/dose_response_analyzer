@@ -697,44 +697,53 @@ def main():
         dmax_predicted_color = st.color_picker("Predicted Dmax line", "#2ca02c")
         
         compound_colors = None
-        if len(data[compound_col].unique()) > 1:
+        unique_compounds = data[compound_col].unique()
+        num_compounds = len(unique_compounds)
+        
+        # Always show this section if there are multiple compounds
+        if num_compounds > 1:
             st.write("**Individual Compound Colors**")
-            st.write("*Especially useful for combined plots to distinguish compounds*")
+            st.write(f"*Found {num_compounds} compounds: {', '.join(unique_compounds[:3])}{'...' if num_compounds > 3 else ''}*")
             
             custom_compound_colors = st.checkbox("Customize colors for each compound", 
                                                value=combined_plot,  # Auto-enable when combined plot is selected
-                                               help="Override default colors with custom colors for each compound")
+                                               help="Override default colors with custom colors for each compound",
+                                               key="custom_compound_colors_checkbox")
             
             if custom_compound_colors:
+                st.success("✅ Custom compound colors enabled!")
                 compound_colors = {}
                 default_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", 
                                 "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
                 
-                # Create a more compact layout
-                st.write("Set custom colors for each compound:")
+                st.write("**Set custom colors for each compound:**")
                 
-                for i, compound in enumerate(data[compound_col].unique()):
-                    with st.expander(f"🎨 {compound} Colors", expanded=i < 3):  # Expand first 3 by default
-                        col_point, col_line = st.columns(2)
-                        
-                        with col_point:
-                            point_color = st.color_picker(
-                                f"Data points", 
-                                default_colors[i % len(default_colors)],
-                                key=f"point_{compound}"
-                            )
-                        
-                        with col_line:
-                            line_color = st.color_picker(
-                                f"Fitted line", 
-                                default_colors[i % len(default_colors)],
-                                key=f"line_{compound}"
-                            )
-                        
-                        compound_colors[compound] = {
-                            'point_color': point_color,
-                            'line_color': line_color
-                        }
+                # Create a simpler layout - always expanded for better visibility
+                for i, compound in enumerate(unique_compounds):
+                    st.write(f"**🧪 {compound}**")
+                    col_point, col_line = st.columns(2)
+                    
+                    with col_point:
+                        point_color = st.color_picker(
+                            f"Data points", 
+                            default_colors[i % len(default_colors)],
+                            key=f"point_color_{i}_{compound}"
+                        )
+                    
+                    with col_line:
+                        line_color = st.color_picker(
+                            f"Fitted line", 
+                            default_colors[i % len(default_colors)],
+                            key=f"line_color_{i}_{compound}"
+                        )
+                    
+                    compound_colors[compound] = {
+                        'point_color': point_color,
+                        'line_color': line_color
+                    }
+                    
+                    if i < len(unique_compounds) - 1:  # Add separator except for last compound
+                        st.divider()
             
             elif combined_plot:
                 st.info("💡 **Tip**: Enable 'Customize colors for each compound' above to distinguish compounds better in combined plots!")
