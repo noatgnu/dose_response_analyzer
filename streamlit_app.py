@@ -699,7 +699,10 @@ def main():
         compound_colors = None
         if len(data[compound_col].unique()) > 1:
             st.write("**Individual Compound Colors**")
+            st.write("*Especially useful for combined plots to distinguish compounds*")
+            
             custom_compound_colors = st.checkbox("Customize colors for each compound", 
+                                               value=combined_plot,  # Auto-enable when combined plot is selected
                                                help="Override default colors with custom colors for each compound")
             
             if custom_compound_colors:
@@ -707,28 +710,51 @@ def main():
                 default_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", 
                                 "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
                 
+                # Create a more compact layout
+                st.write("Set custom colors for each compound:")
+                
                 for i, compound in enumerate(data[compound_col].unique()):
-                    st.write(f"**{compound}**")
-                    col_point, col_line = st.columns(2)
-                    
-                    with col_point:
-                        point_color = st.color_picker(
-                            f"Data points", 
-                            default_colors[i % len(default_colors)],
-                            key=f"point_{compound}"
-                        )
-                    
-                    with col_line:
-                        line_color = st.color_picker(
-                            f"Fitted line", 
-                            default_colors[i % len(default_colors)],
-                            key=f"line_{compound}"
-                        )
-                    
-                    compound_colors[compound] = {
-                        'point_color': point_color,
-                        'line_color': line_color
-                    }
+                    with st.expander(f"🎨 {compound} Colors", expanded=i < 3):  # Expand first 3 by default
+                        col_point, col_line = st.columns(2)
+                        
+                        with col_point:
+                            point_color = st.color_picker(
+                                f"Data points", 
+                                default_colors[i % len(default_colors)],
+                                key=f"point_{compound}"
+                            )
+                        
+                        with col_line:
+                            line_color = st.color_picker(
+                                f"Fitted line", 
+                                default_colors[i % len(default_colors)],
+                                key=f"line_{compound}"
+                            )
+                        
+                        compound_colors[compound] = {
+                            'point_color': point_color,
+                            'line_color': line_color
+                        }
+            
+            elif combined_plot:
+                st.info("💡 **Tip**: Enable 'Customize colors for each compound' above to distinguish compounds better in combined plots!")
+                
+                # Show default color preview for combined plots
+                st.write("**Default Colors Preview:**")
+                default_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", 
+                                "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
+                
+                cols = st.columns(min(len(data[compound_col].unique()), 5))
+                for i, compound in enumerate(data[compound_col].unique()):
+                    with cols[i % len(cols)]:
+                        color = default_colors[i % len(default_colors)]
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; margin: 2px 0;">
+                            <div style="width: 20px; height: 20px; background-color: {color}; 
+                                        border-radius: 50%; margin-right: 8px; border: 1px solid #ccc;"></div>
+                            <span style="font-size: 12px;">{compound}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
         
         max_iterations = 10000
         tolerance = 1e-8
