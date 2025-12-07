@@ -697,6 +697,236 @@ class DoseResponseAnalyzer:
 
         return conc_smooth, response_smooth
 
+    @staticmethod
+    def reconstruct_curve_from_parameters(
+        model_name, top, bottom, ic50, hillslope=1.0, concentration_range=None, n_points=200
+    ):
+        """
+        Reconstruct dose-response curve from known fitted parameters.
+
+        This function allows users to generate smooth dose-response curves when they
+        have the fitted parameters (e.g., from previous analysis, literature, or databases).
+
+        Parameters:
+        -----------
+        model_name : str
+            Name of the dose-response model. Supported models:
+            - 'LL.4', 'model3': 4-parameter logistic
+            - 'LL.3', 'model2': 3-parameter logistic
+            - 'LL.2', 'model1': 2-parameter logistic
+            - 'gompertz': Gompertz model
+            - 'weibull': Weibull model
+        top : float
+            Maximum response value (upper asymptote)
+        bottom : float
+            Minimum response value (lower asymptote)
+        ic50 : float
+            Half-maximal inhibitory/effective concentration
+        hillslope : float, optional
+            Hill slope parameter (default: 1.0)
+        concentration_range : tuple, optional
+            (min_conc, max_conc) for concentration range. If None, uses IC50/1000 to IC50*1000
+        n_points : int, optional
+            Number of points for smooth curve (default: 200)
+
+        Returns:
+        --------
+        tuple
+            (concentration_array, response_array) for plotting or analysis
+
+        Examples:
+        ---------
+        >>> # Reconstruct 4-parameter logistic curve
+        >>> conc, resp = DoseResponseAnalyzer.reconstruct_curve_from_parameters(
+        ...     model_name='LL.4',
+        ...     top=1.0,
+        ...     bottom=0.1,
+        ...     ic50=100.0,
+        ...     hillslope=1.5
+        ... )
+        >>>
+        >>> # Plot the reconstructed curve
+        >>> import matplotlib.pyplot as plt
+        >>> plt.semilogx(conc, resp)
+        >>> plt.xlabel('Concentration')
+        >>> plt.ylabel('Response')
+        >>> plt.show()
+        >>>
+        >>> # Reconstruct from literature values
+        >>> literature_conc, literature_resp = DoseResponseAnalyzer.reconstruct_curve_from_parameters(
+        ...     model_name='LL.4',
+        ...     top=100.0,      # 100% viability
+        ...     bottom=5.0,     # 5% residual viability
+        ...     ic50=50.0,      # IC50 = 50 nM
+        ...     hillslope=2.1,  # Hill slope
+        ...     concentration_range=(0.1, 10000)  # 0.1 nM to 10 μM
+        ... )
+        """
+        # Validate inputs
+        if ic50 <= 0:
+            raise ValueError("IC50 must be positive")
+        if top <= bottom:
+            raise ValueError("Top must be greater than bottom")
+        if n_points < 10:
+            raise ValueError("n_points must be at least 10")
+
+        # Set concentration range
+        if concentration_range is None:
+            min_conc = ic50 / 1000
+            max_conc = ic50 * 1000
+        else:
+            min_conc, max_conc = concentration_range
+            if min_conc <= 0 or max_conc <= min_conc:
+                raise ValueError("Invalid concentration range")
+
+        # Generate concentration points (logarithmic spacing)
+        concentrations = np.logspace(np.log10(min_conc), np.log10(max_conc), n_points)
+
+        # Calculate responses based on model type
+        model_name_lower = model_name.lower()
+
+        if model_name_lower in ["ll.4", "model3"]:
+            # 4-parameter logistic
+            responses = bottom + (top - bottom) / (1 + (concentrations / ic50) ** hillslope)
+
+        elif model_name_lower in ["ll.3", "model2"]:
+            # 3-parameter logistic (hillslope = 1)
+            responses = bottom + (top - bottom) / (1 + concentrations / ic50)
+
+        elif model_name_lower in ["ll.2", "model1"]:
+            # 2-parameter logistic (bottom = 0, hillslope = 1)
+            responses = top / (1 + concentrations / ic50)
+
+        elif model_name_lower == "gompertz":
+            # Gompertz model
+            responses = bottom + (top - bottom) * np.exp(
+                -np.exp(-hillslope * (np.log(concentrations) - np.log(ic50)))
+            )
+
+        elif model_name_lower == "weibull":
+            # Weibull model
+            responses = bottom + (top - bottom) * (
+                1 - np.exp(-((concentrations / ic50) ** hillslope))
+            )
+
+        else:
+            raise ValueError(
+                f"Unsupported model type: {model_name}. "
+                f"Supported models: LL.4, LL.3, LL.2, model1-3, gompertz, weibull"
+            )
+
+        return concentrations, responses
+
+    @staticmethod
+    def reconstruct_curve_from_results(
+        results, compound_name, concentration_range=None, n_points=200
+    ):
+        """
+        Reconstruct curve from DoseResponseAnalyzer results for a specific compound.
+
+        This is a convenience function that extracts parameters from analyzer results
+        and reconstructs the curve.
+
+        Parameters:
+        -----------
+        results : dict
+            Results dictionary from fit_best_models()
+        compound_name : str
+            Name of compound to reconstruct curve for
+        concentration_range : tuple, optional
+            (min_conc, max_conc) for concentration range
+        n_points : int, optional
+            Number of points for smooth curve (default: 200)
+
+        Returns:
+        --------
+        tuple
+            (concentration_array, response_array)
+
+        Examples:
+        ---------
+        >>> # After running analysis
+        >>> results = analyzer.fit_best_models(df)
+        >>>
+        >>> # Reconstruct curve for specific compound
+        >>> conc, resp = DoseResponseAnalyzer.reconstruct_curve_from_results(
+        ...     results, 'Compound_A'
+        ... )
+        >>>
+        >>> # Plot alongside original data
+        >>> import matplotlib.pyplot as plt
+        >>> plt.scatter(original_conc, original_resp, label='Data')
+        >>> plt.semilogx(conc, resp, label='Fitted Curve')
+        >>> plt.legend()
+        >>> plt.show()
+        """
+        # Check if compound exists in results
+        if compound_name not in results["best_fitted_models"]:
+            available_compounds = list(results["best_fitted_models"].keys())
+            raise ValueError(
+                f"Compound '{compound_name}' not found. "
+                f"Available compounds: {available_compounds}"
+            )
+
+        # Get model data for the compound
+        model_data = results["best_fitted_models"][compound_name]
+        model_result = model_data["model_result"]
+
+        # Extract parameters
+        model_name = model_result["model_name"]
+        fitted_params = model_result["fitted_params"]
+
+        # Extract parameters based on model type
+        if model_name == "model1":
+            top, ic50 = fitted_params
+            bottom = 0
+            hillslope = 1
+        elif model_name == "model2":
+            bottom, top, ic50 = fitted_params
+            hillslope = 1
+        elif model_name == "model3":
+            hillslope, bottom, top, ic50 = fitted_params
+        elif model_name == "model4":
+            top, ic50 = fitted_params
+            bottom = 0
+            hillslope = 1
+        elif model_name == "model5":
+            hillslope, top, ic50 = fitted_params
+            bottom = 0
+        elif model_name == "model6":
+            top, ic50 = fitted_params
+            bottom = 0
+            hillslope = 1
+        elif model_name == "gompertz":
+            top, bottom, ic50, hillslope = fitted_params
+        elif model_name == "weibull":
+            top, bottom, ic50, hillslope = fitted_params
+        elif model_name == "exponential":
+            top, rate = fitted_params
+            bottom = 0
+            ic50 = np.nan
+            hillslope = rate
+        elif model_name == "linear":
+            hillslope, intercept = fitted_params
+            top = bottom = ic50 = np.nan
+        else:
+            raise ValueError(f"Unknown model type: {model_name}")
+
+        # For exponential and linear models, use original prediction method
+        if model_name in ["exponential", "linear"] or np.isnan(ic50):
+            return DoseResponseAnalyzer().predict_curve(model_data, concentration_range, n_points)
+
+        # Use the parameter-based reconstruction
+        return DoseResponseAnalyzer.reconstruct_curve_from_parameters(
+            model_name=model_name,
+            top=top,
+            bottom=bottom,
+            ic50=ic50,
+            hillslope=hillslope,
+            concentration_range=concentration_range,
+            n_points=n_points,
+        )
+
 
 class DoseResponsePlotter:
     """Comprehensive plotting class for dose-response curve visualization.
@@ -1285,6 +1515,247 @@ class DoseResponsePlotter:
         print(
             f"Individual plots saved for {len(results['best_fitted_models'])} compounds in: {Path(output_dir).resolve()}"
         )
+
+    def plot_reconstructed_curve(
+        self,
+        concentrations,
+        responses,
+        compound_name="Reconstructed Curve",
+        model_params=None,
+        original_data=None,
+        show_ic50_lines=True,
+        show_parameters=True,
+        figsize=(8, 6),
+        save_plot=False,
+        output_path=None,
+        **plot_kwargs,
+    ):
+        """
+        Create publication-quality plots from reconstructed curve data.
+
+        This method provides a convenient way to plot reconstructed dose-response curves
+        with the same styling and features as the main analysis plots, including
+        IC50 reference lines, parameter display, and comparison with original data.
+
+        Parameters:
+        -----------
+        concentrations : array_like
+            Concentration values from curve reconstruction
+        responses : array_like
+            Response values from curve reconstruction
+        compound_name : str, optional
+            Name/title for the curve (default: "Reconstructed Curve")
+        model_params : dict, optional
+            Dictionary with model parameters containing keys:
+            - 'model_name': Model type (e.g., 'LL.4')
+            - 'top': Maximum response
+            - 'bottom': Minimum response
+            - 'ic50': Half-maximal concentration
+            - 'hillslope': Hill slope parameter
+            - 'rmse': Root mean square error (optional)
+        original_data : dict, optional
+            Dictionary with original data points containing keys:
+            - 'concentrations': Original concentration values
+            - 'responses': Original response values
+        show_ic50_lines : bool, optional
+            Whether to show IC50 reference lines (default: True)
+        show_parameters : bool, optional
+            Whether to display parameter text box (default: True)
+        figsize : tuple, optional
+            Figure size (width, height) in inches (default: (8, 6))
+        save_plot : bool, optional
+            Whether to save the plot to file (default: False)
+        output_path : str, optional
+            Path to save the plot (auto-generated if None)
+        **plot_kwargs : dict
+            Additional plotting parameters:
+            - curve_color: Color for the fitted curve (default: self.colors['curve'])
+            - curve_linewidth: Line width for curve (default: 2.0)
+            - point_color: Color for data points (default: self.colors['points'])
+            - point_size: Size of data points (default: 60)
+            - grid_alpha: Grid transparency (default: 0.3)
+
+        Returns:
+        --------
+        matplotlib.figure.Figure
+            The created figure object
+
+        Examples:
+        ---------
+        >>> from dra import DoseResponsePlotter, reconstruct_curve_from_parameters
+        >>> import matplotlib.pyplot as plt
+        >>>
+        >>> # Reconstruct curve from parameters
+        >>> conc, resp = reconstruct_curve_from_parameters(
+        ...     'LL.4', top=1.0, bottom=0.1, ic50=100.0, hillslope=1.5
+        ... )
+        >>>
+        >>> # Create plot
+        >>> plotter = DoseResponsePlotter()
+        >>> fig = plotter.plot_reconstructed_curve(
+        ...     conc, resp,
+        ...     compound_name="Compound A",
+        ...     model_params={
+        ...         'model_name': 'LL.4', 'top': 1.0, 'bottom': 0.1,
+        ...         'ic50': 100.0, 'hillslope': 1.5
+        ...     }
+        ... )
+        >>> plt.show()
+        >>>
+        >>> # Plot with original data comparison
+        >>> original_data = {
+        ...     'concentrations': [1, 10, 100, 1000],
+        ...     'responses': [0.95, 0.8, 0.55, 0.2]
+        ... }
+        >>> fig = plotter.plot_reconstructed_curve(
+        ...     conc, resp,
+        ...     compound_name="Compound A",
+        ...     model_params={'model_name': 'LL.4', 'ic50': 100.0, 'rmse': 0.025},
+        ...     original_data=original_data
+        ... )
+        """
+        try:
+            from datetime import datetime
+
+            import matplotlib.pyplot as plt
+
+            # Set up plotting parameters
+            curve_color = plot_kwargs.get("curve_color", self.colors["curve"])
+            curve_linewidth = plot_kwargs.get("curve_linewidth", 2.0)
+            point_color = plot_kwargs.get("point_color", self.colors["points"])
+            point_size = plot_kwargs.get("point_size", 60)
+            grid_alpha = plot_kwargs.get("grid_alpha", 0.3)
+
+            # Create figure
+            fig, ax = plt.subplots(figsize=figsize)
+
+            # Plot reconstructed curve
+            ax.semilogx(
+                concentrations,
+                responses,
+                color=curve_color,
+                linewidth=curve_linewidth,
+                label=f'Fitted Curve ({model_params.get("model_name", "Unknown")})',
+                zorder=2,
+            )
+
+            # Plot original data if provided
+            if original_data is not None:
+                ax.scatter(
+                    original_data["concentrations"],
+                    original_data["responses"],
+                    color=point_color,
+                    s=point_size,
+                    alpha=0.8,
+                    label="Original Data",
+                    zorder=3,
+                )
+
+            # Add IC50 reference lines if requested and parameters available
+            if show_ic50_lines and model_params is not None:
+                ic50 = model_params.get("ic50")
+                top = model_params.get("top")
+                bottom = model_params.get("bottom")
+
+                if ic50 is not None and top is not None and bottom is not None:
+                    # Calculate IC50 response level
+                    ic50_response = (top + bottom) / 2
+
+                    # Vertical line at IC50
+                    ax.axvline(
+                        x=ic50,
+                        color=self.colors["ic50_v"],
+                        linestyle="--",
+                        linewidth=self.line_widths["lines"],
+                        alpha=0.8,
+                        zorder=1,
+                        label=f"IC₅₀ = {ic50:.1f}",
+                    )
+
+                    # Horizontal line at IC50 response
+                    ax.axhline(
+                        y=ic50_response,
+                        color=self.colors["ic50_h"],
+                        linestyle="--",
+                        linewidth=self.line_widths["lines"],
+                        alpha=0.8,
+                        zorder=1,
+                    )
+
+                    # IC50 label
+                    ax.text(
+                        ic50 * 1.1,
+                        ax.get_ylim()[1] * 0.95,
+                        f"IC₅₀ = {ic50:.1f}",
+                        color=curve_color,
+                        fontsize=10,
+                        fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+                    )
+
+            # Display parameters text box if requested
+            if show_parameters and model_params is not None:
+                param_lines = []
+                if "model_name" in model_params:
+                    param_lines.append(f"Model: {model_params['model_name']}")
+                if "top" in model_params:
+                    param_lines.append(f"Top: {model_params['top']:.3f}")
+                if "bottom" in model_params:
+                    param_lines.append(f"Bottom: {model_params['bottom']:.3f}")
+                if "ic50" in model_params:
+                    param_lines.append(f"IC50: {model_params['ic50']:.1f}")
+                if "hillslope" in model_params:
+                    param_lines.append(f"Hill Slope: {model_params['hillslope']:.2f}")
+                if "rmse" in model_params:
+                    param_lines.append(f"RMSE: {model_params['rmse']:.4f}")
+
+                if param_lines:
+                    param_text = "\n".join(param_lines)
+                    ax.text(
+                        0.02,
+                        0.98,
+                        param_text,
+                        transform=ax.transAxes,
+                        fontsize=9,
+                        verticalalignment="top",
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.8),
+                    )
+
+            # Set axis properties
+            ax.set_xlabel("Concentration", fontsize=12)
+            ax.set_ylabel("Response", fontsize=12)
+            ax.set_title(compound_name, fontsize=14, fontweight="bold")
+            ax.grid(True, alpha=grid_alpha, which="both")
+
+            # Set appropriate y-axis limits
+            y_min = min(responses) * 0.95
+            y_max = max(responses) * 1.05
+            ax.set_ylim(y_min, y_max)
+
+            # Add legend
+            ax.legend(fontsize=10)
+
+            plt.tight_layout()
+
+            # Save plot if requested
+            if save_plot:
+                if output_path is None:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    safe_name = compound_name.replace(" ", "_").replace("/", "_")
+                    output_path = f"reconstructed_curve_{safe_name}_{timestamp}.png"
+
+                plt.savefig(output_path, dpi=300, bbox_inches="tight")
+                print(f"Plot saved as: {output_path}")
+
+            return fig
+
+        except ImportError:
+            print("Matplotlib not available. Install it to generate plots:")
+            print("pip install matplotlib")
+            return None
+        except Exception as e:
+            print(f"Error creating plot: {str(e)}")
+            return None
 
 
 def example_usage():
