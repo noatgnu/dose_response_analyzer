@@ -329,6 +329,38 @@ class DoseResponseAnalyzer:
         else:
             return np.nan
 
+    def _extract_ic90(self, model_name, fitted_params):
+        """Extract/Calculate IC90 value from fitted parameters.
+
+        IC90 is the concentration causing 90% inhibition.
+        Formula: IC90 = IC50 * (9 ** (1/hillslope))
+
+        Args:
+            model_name (str): Name of the fitted model.
+            fitted_params (array_like): Fitted model parameters.
+
+        Returns:
+            float: IC90 value or NaN if not applicable.
+        """
+        ic50 = self._extract_ic50(model_name, fitted_params)
+        if np.isnan(ic50):
+            return np.nan
+
+        hillslope = 1.0
+        if model_name in ["model3"]:
+            hillslope = fitted_params[0]
+        elif model_name in ["model5"]:
+            hillslope = fitted_params[0]
+        elif model_name in ["gompertz", "weibull", "exponential", "linear"]:
+            return np.nan
+
+        try:
+            # For inhibition curves modeled as Bottom + (Top-Bottom)/(1+(X/IC50)^H)
+            # IC90 = IC50 * (9^(1/H))
+            return ic50 * (9 ** (1 / hillslope))
+        except:
+            return np.nan
+
     def fit_single_model(self, concentration, response, model_name, model_spec):
         """
         Fit a single dose-response model with customizable algorithm parameters
@@ -379,11 +411,13 @@ class DoseResponseAnalyzer:
                 )
 
             ic50 = self._extract_ic50(model_name, fitted_params)
+            ic90 = self._extract_ic90(model_name, fitted_params)
 
             return {
                 "model_name": model_name,
                 "fitted_params": fitted_params,
                 "ic50": ic50,
+                "ic90": ic90,
                 "aic": aic,
                 "bic": bic,
                 "rmse": rmse,
@@ -584,6 +618,7 @@ class DoseResponseAnalyzer:
                             "Model": model_name,
                             "Compound": compound,
                             "IC50": result["ic50"],
+                            "IC90": result["ic90"],
                             "AIC": result["aic"],
                             "RMSE": result["rmse"],
                         }
@@ -1022,6 +1057,7 @@ class DoseResponsePlotter:
         analyzer: DoseResponseAnalyzer,
         df: pd.DataFrame,
         show_ic50_lines=True,
+        show_ic90_lines=False,
         show_dmax_lines=True,
         figsize_per_plot=(6, 5),
         save_plots=True,
@@ -1042,6 +1078,8 @@ class DoseResponsePlotter:
             Original data
         show_ic50_lines : bool, default=True
             Whether to show IC50 reference lines
+        show_ic90_lines : bool, default=False
+            Whether to show IC90 reference lines
         show_dmax_lines : bool, default=True
             Whether to show Dmax reference lines
         figsize_per_plot : tuple, default=(6, 5)
@@ -1136,10 +1174,17 @@ class DoseResponsePlotter:
 
                 params = self._extract_model_parameters(model_result)
                 ic50 = params["ic50"]
+                # Retrieve IC90 from model result
+                ic90 = model_result.get("ic90", np.nan)
+
                 top = params["top"]
                 bottom = params["bottom"]
 
                 ic50_response = (top + bottom) / 2
+
+                # Calculate IC90 response (10% remaining response relative to span)
+                # Response = Bottom + 0.1 * (Top - Bottom)
+                ic90_response = bottom + 0.1 * (top - bottom)
 
                 if show_ic50_lines and not np.isnan(ic50):
                     ax.axvline(
@@ -1173,10 +1218,39 @@ class DoseResponsePlotter:
                     ax.text(
                         xlim_extended[0],
                         ic50_response - 0.05,
-                        "50% of maximum inhibition",
+                        "50% Inh.",
                         color=self.colors["ic50_h"],
                         fontsize=9,
                         alpha=0.8,
+                    )
+
+                if show_ic90_lines and not np.isnan(ic90):
+                    ax.axvline(
+                        x=ic90,
+                        color="purple",  # Use purple for IC90
+                        linestyle=":",
+                        linewidth=self.line_widths["lines"],
+                        alpha=0.8,
+                        zorder=1,
+                    )
+
+                    ax.axhline(
+                        y=ic90_response,
+                        color="purple",
+                        linestyle=":",
+                        linewidth=self.line_widths["lines"],
+                        alpha=0.8,
+                        zorder=1,
+                    )
+
+                    ax.text(
+                        ic90 * 1.1,
+                        ax.get_ylim()[1] * 0.85,  # Slightly lower than IC50 label
+                        f"IC₉₀ = {ic90:.1f} nM",
+                        color="purple",
+                        fontsize=10,
+                        fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
                     )
 
                 if show_dmax_lines:
@@ -1305,6 +1379,7 @@ class DoseResponsePlotter:
                     analyzer,
                     data_filtered,
                     show_ic50_lines,
+                    show_ic90_lines,
                     show_dmax_lines,
                     output_dir,
                     filename_prefix,
@@ -1324,6 +1399,7 @@ class DoseResponsePlotter:
         analyzer,
         data_filtered,
         show_ic50_lines,
+        show_ic90_lines,
         show_dmax_lines,
         output_dir,
         filename_prefix,
@@ -1337,6 +1413,7 @@ class DoseResponsePlotter:
             analyzer (DoseResponseAnalyzer): Analyzer instance.
             data_filtered (pd.DataFrame): Filtered data without zero concentrations.
             show_ic50_lines (bool): Whether to show IC50 reference lines.
+            show_ic90_lines (bool): Whether to show IC90 reference lines.
             show_dmax_lines (bool): Whether to show Dmax reference lines.
             output_dir (str): Directory to save plots.
             filename_prefix (str): Prefix for output filenames.
@@ -1386,9 +1463,13 @@ class DoseResponsePlotter:
 
             params = self._extract_model_parameters(model_result)
             ic50 = params["ic50"]
+            ic90 = model_result.get("ic90", np.nan)
+
+            top = params["top"]
+            bottom = params["bottom"]
 
             if show_ic50_lines and not np.isnan(ic50):
-                ic50_response = (params["top"] + params["bottom"]) / 2
+                ic50_response = (top + bottom) / 2
                 ax.axvline(
                     x=ic50,
                     color=self.colors["ic50_v"],
@@ -1409,6 +1490,35 @@ class DoseResponsePlotter:
                     ax.get_ylim()[1] * 0.95,
                     f"IC₅₀ = {ic50:.1f} nM",
                     color=self.colors["curve"],
+                    fontsize=12,
+                    fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9),
+                )
+
+            if show_ic90_lines and not np.isnan(ic90):
+                # IC90 response is 10% remaining of the span
+                ic90_response = bottom + 0.1 * (top - bottom)
+
+                ax.axvline(
+                    x=ic90,
+                    color="purple",
+                    linestyle=":",
+                    linewidth=self.line_widths["lines"],
+                    alpha=0.8,
+                )
+                ax.axhline(
+                    y=ic90_response,
+                    color="purple",
+                    linestyle=":",
+                    linewidth=self.line_widths["lines"],
+                    alpha=0.8,
+                )
+
+                ax.text(
+                    ic90 * 1.1,
+                    ax.get_ylim()[1] * 0.85,
+                    f"IC₉₀ = {ic90:.1f} nM",
+                    color="purple",
                     fontsize=12,
                     fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9),

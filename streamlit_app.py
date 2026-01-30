@@ -28,6 +28,7 @@ class StreamlitPlotter(DoseResponsePlotter):
         analyzer,
         df,
         show_ic50_lines=True,
+        show_ic90_lines=False,
         show_dmax_lines=True,
         figsize_per_plot=(8, 6),
         text_size=12,
@@ -70,6 +71,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                 analyzer,
                 data_filtered,
                 show_ic50_lines,
+                show_ic90_lines,
                 show_dmax_lines,
                 figsize_per_plot,
                 text_size,
@@ -99,6 +101,7 @@ class StreamlitPlotter(DoseResponsePlotter):
                 analyzer,
                 data_filtered,
                 show_ic50_lines,
+                show_ic90_lines,
                 show_dmax_lines,
                 figsize_per_plot,
                 text_size,
@@ -123,12 +126,38 @@ class StreamlitPlotter(DoseResponsePlotter):
                 compound_colors,
             )
 
+    def _apply_prism_style(self, ax, text_size):
+        """Apply GraphPad Prism-like styling to the axes."""
+        # Remove top and right spines
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        # Thicker axes lines
+        ax.spines["left"].set_linewidth(2.0)
+        ax.spines["bottom"].set_linewidth(2.0)
+
+        # Ticks pointing out and thicker
+        ax.tick_params(width=2.0, direction="out", length=6, labelsize=text_size)
+
+        # Ensure black axes
+        ax.spines["left"].set_color("black")
+        ax.spines["bottom"].set_color("black")
+        ax.xaxis.label.set_color("black")
+        ax.yaxis.label.set_color("black")
+        ax.tick_params(axis="x", colors="black")
+        ax.tick_params(axis="y", colors="black")
+
+        # White background and no grid
+        ax.set_facecolor("white")
+        ax.grid(False)
+
     def _create_combined_plot(
         self,
         results,
         analyzer,
         data_filtered,
         show_ic50_lines,
+        show_ic90_lines,
         show_dmax_lines,
         figsize_per_plot,
         text_size,
@@ -158,12 +187,17 @@ class StreamlitPlotter(DoseResponsePlotter):
         response_col = analyzer.columns["response"]
         compound_col = analyzer.columns["compound"]
 
-        if plot_style != "default":
+        if plot_style == "GraphPad Prism":
+            plt.style.use("default")
+        elif plot_style != "default":
             plt.style.use(plot_style)
         else:
             plt.style.use("default")
 
         fig, ax = plt.subplots(figsize=figsize_per_plot)
+
+        if plot_style == "GraphPad Prism":
+            self._apply_prism_style(ax, text_size)
 
         default_colors = plt.cm.tab10(np.linspace(0, 1, len(results["best_fitted_models"])))
         markers = ["o", "s", "^", "D", "v", "<", ">", "p", "*", "h"]
@@ -221,12 +255,14 @@ class StreamlitPlotter(DoseResponsePlotter):
 
             params = self._extract_model_parameters(model_result)
             ic50 = params["ic50"]
+            ic90 = model_result.get("ic90", np.nan)
+
+            top = params["top"]
+            bottom = params["bottom"]
 
             if show_ic50_lines and not np.isnan(ic50):
                 ic50_response = (
-                    (params["top"] + params["bottom"]) / 2
-                    if not (np.isnan(params["top"]) or np.isnan(params["bottom"]))
-                    else np.nan
+                    (top + bottom) / 2 if not (np.isnan(top) or np.isnan(bottom)) else np.nan
                 )
 
                 if not np.isnan(ic50_response):
@@ -247,6 +283,24 @@ class StreamlitPlotter(DoseResponsePlotter):
                         zorder=1,
                     )
 
+            if show_ic90_lines and not np.isnan(ic90):
+                # IC90 response
+                ic90_response = (
+                    bottom + 0.1 * (top - bottom)
+                    if not (np.isnan(top) or np.isnan(bottom))
+                    else np.nan
+                )
+
+                if not np.isnan(ic90_response):
+                    ax.axvline(
+                        x=ic90,
+                        color=line_color_compound,
+                        linestyle=":",
+                        linewidth=1.0,
+                        alpha=0.5,
+                        zorder=1,
+                    )
+
         xlim_extended = [x_min_global / 10, x_max_global * 10]
         log_min = int(np.floor(np.log10(xlim_extended[0])))
         log_max = int(np.ceil(np.log10(xlim_extended[1])))
@@ -263,8 +317,10 @@ class StreamlitPlotter(DoseResponsePlotter):
         ax.set_ylabel(response_col, fontsize=text_size)
         ax.set_title("Combined Dose-Response Curves", fontsize=title_size, fontweight="bold")
 
-        if show_grid:
+        if show_grid and plot_style != "GraphPad Prism":
             ax.grid(True, alpha=grid_alpha, which="both", linestyle=grid_style)
+        elif plot_style == "GraphPad Prism":
+            ax.grid(False)
 
         ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=text_size - 2)
 
@@ -315,6 +371,7 @@ class StreamlitPlotter(DoseResponsePlotter):
         analyzer,
         data_filtered,
         show_ic50_lines,
+        show_ic90_lines,
         show_dmax_lines,
         figsize_per_plot,
         text_size,
@@ -350,12 +407,17 @@ class StreamlitPlotter(DoseResponsePlotter):
             compound_data = data_filtered[data_filtered[compound_col] == compound].copy()
             model_result = model_data["model_result"]
 
-            if plot_style != "default":
+            if plot_style == "GraphPad Prism":
+                plt.style.use("default")
+            elif plot_style != "default":
                 plt.style.use(plot_style)
             else:
                 plt.style.use("default")
 
             fig, ax = plt.subplots(figsize=figsize_per_plot)
+
+            if plot_style == "GraphPad Prism":
+                self._apply_prism_style(ax, text_size)
 
             x_min = compound_data[concentration_col].min()
             x_max = compound_data[concentration_col].max()
@@ -400,13 +462,17 @@ class StreamlitPlotter(DoseResponsePlotter):
 
             params = self._extract_model_parameters(model_result)
             ic50 = params["ic50"]
+            ic90 = model_result.get("ic90", np.nan)
+
             top = params["top"]
             bottom = params["bottom"]
 
             if not (np.isnan(top) or np.isnan(bottom)):
                 ic50_response = (top + bottom) / 2
+                ic90_response = bottom + 0.1 * (top - bottom)
             else:
                 ic50_response = np.nan
+                ic90_response = np.nan
 
             if show_ic50_lines and not np.isnan(ic50) and not np.isnan(ic50_response):
                 ax.axvline(
@@ -440,10 +506,39 @@ class StreamlitPlotter(DoseResponsePlotter):
                 ax.text(
                     xlim_extended[0],
                     ic50_response - 0.05,
-                    "50% of maximum inhibition",
+                    "50% Inh.",
                     color=ic50_horizontal_color,
                     fontsize=text_size - 3,
                     alpha=0.8,
+                )
+
+            if show_ic90_lines and not np.isnan(ic90) and not np.isnan(ic90_response):
+                ax.axvline(
+                    x=ic90,
+                    color="purple",
+                    linestyle=":",
+                    linewidth=self.line_widths["lines"],
+                    alpha=0.8,
+                    zorder=1,
+                )
+
+                ax.axhline(
+                    y=ic90_response,
+                    color="purple",
+                    linestyle=":",
+                    linewidth=self.line_widths["lines"],
+                    alpha=0.8,
+                    zorder=1,
+                )
+
+                ax.text(
+                    ic90 * 1.1,
+                    ax.get_ylim()[1] * 0.85,
+                    f"IC₉₀ = {ic90:.1f}",
+                    color="purple",
+                    fontsize=text_size,
+                    fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9),
                 )
 
             if show_dmax_lines:
@@ -484,8 +579,10 @@ class StreamlitPlotter(DoseResponsePlotter):
             ax.set_ylabel(f"{response_col}", fontsize=text_size + 2)
             ax.set_title(f"{compound}", fontsize=title_size, fontweight="bold")
 
-            if show_grid:
+            if show_grid and plot_style != "GraphPad Prism":
                 ax.grid(True, alpha=grid_alpha, which="both", linestyle=grid_style)
+            elif plot_style == "GraphPad Prism":
+                ax.grid(False)
             else:
                 ax.grid(False)
 
@@ -744,6 +841,7 @@ def main():
     with st.sidebar:
         st.header("Data Upload & Configuration")
 
+        data = None
         sample_files = get_sample_files()
 
         if sample_files:
@@ -821,48 +919,59 @@ def main():
             st.stop()
 
         """Provide interface for mapping user columns to analysis requirements."""
-        st.subheader("Column Mapping")
-        st.write("Map your data columns to the required fields:")
+        if data is not None:
+            st.subheader("Column Mapping")
+            st.write("Map your data columns to the required fields:")
 
-        auto_compound = "Compound" if "Compound" in data.columns else data.columns[0]
-        auto_concentration = "Conc" if "Conc" in data.columns else data.columns[0]
-        auto_response = "Rab10" if "Rab10" in data.columns else data.columns[0]
+            auto_compound = "Compound" if "Compound" in data.columns else data.columns[0]
+            auto_concentration = "Conc" if "Conc" in data.columns else data.columns[0]
+            auto_response = "Rab10" if "Rab10" in data.columns else data.columns[0]
 
-        compound_idx = (
-            list(data.columns).index(auto_compound) if auto_compound in data.columns else 0
-        )
-        concentration_idx = (
-            list(data.columns).index(auto_concentration)
-            if auto_concentration in data.columns
-            else 0
-        )
-        response_idx = (
-            list(data.columns).index(auto_response) if auto_response in data.columns else 0
-        )
+            compound_idx = (
+                list(data.columns).index(auto_compound) if auto_compound in data.columns else 0
+            )
+            concentration_idx = (
+                list(data.columns).index(auto_concentration)
+                if auto_concentration in data.columns
+                else 0
+            )
+            response_idx = (
+                list(data.columns).index(auto_response) if auto_response in data.columns else 0
+            )
 
-        compound_col = st.selectbox(
-            "🧪 Compound/Drug column:",
-            data.columns,
-            index=compound_idx,
-            help="Column containing compound or drug identifiers (auto-detected: Compound)",
-        )
+            compound_col = st.selectbox(
+                "🧪 Compound/Drug column:",
+                data.columns,
+                index=compound_idx,
+                help="Column containing compound or drug identifiers (auto-detected: Compound)",
+            )
 
-        concentration_col = st.selectbox(
-            "🔢 Concentration/Dose column:",
-            data.columns,
-            index=concentration_idx,
-            help="Column containing concentration or dose values (auto-detected: Conc)",
-        )
+            concentration_col = st.selectbox(
+                "🔢 Concentration/Dose column:",
+                data.columns,
+                index=concentration_idx,
+                help="Column containing concentration or dose values (auto-detected: Conc)",
+            )
 
-        response_col = st.selectbox(
-            "📈 Response column:",
-            data.columns,
-            index=response_idx,
-            help="Column containing response or effect measurements (auto-detected: Rab10)",
+            response_col = st.selectbox(
+                "📈 Response column:",
+                data.columns,
+                index=response_idx,
+                help="Column containing response or effect measurements (auto-detected: Rab10)",
+            )
+        else:
+            st.stop()
+
+        st.subheader("Analysis Mode")
+        analysis_mode = st.radio(
+            "Select Analysis Mode:",
+            ("Best Fit (RMSE)", "GraphPad Prism (4PL)"),
+            help="Best Fit: Compares multiple models and selects the best by RMSE.\nGraphPad Prism (4PL): Uses the standard 4-parameter logistic model (Variable slope).",
         )
 
         st.subheader("Plot Options")
         show_ic50 = st.checkbox("Show IC50 lines", value=True)
+        show_ic90 = st.checkbox("Show IC90 lines", value=False)
         show_dmax = st.checkbox("Show Dmax lines", value=True)
         combined_plot = st.checkbox(
             "Combine all compounds on single plot",
@@ -879,6 +988,7 @@ def main():
 
         style_options = [
             "default",
+            "GraphPad Prism",
             "seaborn-v0_8",
             "ggplot",
             "bmh",
@@ -1134,6 +1244,17 @@ def main():
                     bootstrap_samples=bootstrap_samples,
                 )
 
+                # Apply Prism Mode if selected (Restrict to 4PL model)
+                if analysis_mode == "GraphPad Prism (4PL)":
+                    st.info(
+                        "ℹ️ Using GraphPad Prism mode: Restricting analysis to 4-parameter logistic model (Variable slope)."
+                    )
+                    # Keep only model3 (LL.4) and model5 (LL.4 fixed bottom) if needed, but standard Prism variable slope is LL.4
+                    # We can keep model3 and model5 (if bottom fixed is desired, but here we just want the standard 4PL)
+                    # Let's keep just model3 to be strict, or maybe both 4PL variants.
+                    # Usually "Variable slope" implies 4 parameters (Bottom, Top, IC50, HillSlope).
+                    analyzer.model_specs = {"model3": analyzer.model_specs["model3"]}
+
                 analyzer.log_transformed = log_transformed
 
                 progress_bar = st.progress(0)
@@ -1189,6 +1310,7 @@ def main():
                 st.session_state.analyzer,
                 st.session_state.data_for_analysis,
                 show_ic50_lines=show_ic50,
+                show_ic90_lines=show_ic90,
                 show_dmax_lines=show_dmax,
                 figsize_per_plot=(plot_width, plot_height),
                 text_size=text_size,

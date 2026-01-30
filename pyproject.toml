@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dose-response-analyzer"
-version = "0.1.0"
+version = "0.1.1"
 description = "A comprehensive Python package for dose-response curve analysis, equivalent to R's drc package"
 authors = ["Toan Phung <toan.phung@proteo.info>", "Claude Code <noreply@anthropic.com>"]
 readme = "README.md"
